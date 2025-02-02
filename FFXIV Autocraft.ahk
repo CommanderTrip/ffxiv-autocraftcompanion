@@ -1,17 +1,6 @@
 ﻿#Requires AutoHotkey v2.0
 #HotIf WinActive("FINAL FANTASY XIV")
 
-/*
-Usage:
-	Intended to be a fully AFK macro for FFXIV. Set FFXIV to windowed mode, move it to another monitor, then do not touch it.
-	Macro will take control when needed so you can continue to use your PC <-- still in testing.
-
-	TODO:
-		- Add the option to use 2 keys for a two step macro i.e. not relying on the penumbra mod "Macrochain"
-		- Add the option to create profiles to auto load different preferences
-		- Add the ability to re-up Food and/or Pot when needed
-*/
-
 PREFERENCES_FILENAME := "ffxiv_autocraft_preferences.txt"
 
 ; Right Ctrl + K.
