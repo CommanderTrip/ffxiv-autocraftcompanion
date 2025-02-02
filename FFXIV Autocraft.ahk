@@ -1,4 +1,4 @@
-#Requires AutoHotkey v2.0
+﻿#Requires AutoHotkey v2.0
 #HotIf WinActive("FINAL FANTASY XIV")
 
 /*
@@ -6,81 +6,109 @@ Usage:
 	Intended to be a fully AFK macro for FFXIV. Set FFXIV to windowed mode, move it to another monitor, then do not touch it.
 	Macro will take control when needed so you can continue to use your PC <-- still in testing.
 
-	To make a new hotkey, follow the below examples to by calling "ffxivPenumbraAutoCraft" with the duration in seconds of your macro
-	and the title you'd like. Then click into FFXIV, move your cursor over the "Synthesize" button of the craft, and hit the macro hotkey!
+	TODO:
+		- Add the option to use 2 keys for a two step macro i.e. not relying on the penumbra mod "Macrochain"
+		- Add the option to create profiles to auto load different preferences
+		- Add the ability to re-up Food and/or Pot when needed
 */
 
-NUM_OF_CRAFTS := 2
-FFXIV_CRAFT_BUTTON := "V"
+PREFERENCES_FILENAME := "ffxiv_autocraft_preferences.txt"
 
-; Right Shift + C
->+c::
+; Right Ctrl + K.
+>^k::
 {
-	; Assumed to be 28 steps (13 -- /micon and /nextmacro -- + 15)
-	; each with 3 seconds of wait time for each step
-	ffxivPenumbraAutoCraft(84, "Worst-case, Two-step Macro with Penumbra Active")
-}
+	MouseGetPos &ffxivXPos, &ffxivYPos ; Save where the Synthesize button is in the FFXIV window
+	inputGui := Gui(, "FFXIV Autocraft")
 
-; Right Ctrl + C
->^c::
-{
-	; Assumed to be 15 steps each with 3 seconds of wait time for each step
-	ffxivPenumbraAutoCraft(45, "Worst-case, One-step Macro with Penumbra Active")
-}
+	inputGui.Add("Text","Section", "Number of Crafts:")
+	inputGui.Add("Text",, "Time per one craft in seconds: ")
+	inputGui.Add("Text",, "Key to press: ")
+	inputGui.AddCheckBox("vSaveAsDefault", "Save as defaults?")
 
-; Right Shift + M. Timing tailored to the "Moqueca" macro with Penumbra active
->+m::
-{
-	ffxivPenumbraAutoCraft(55, "Moqueca")
-}
+	crafts := inputGui.Add("Edit", "vNumOfCrafts Number Limit2 ys w100", 1)
+	time   := inputGui.Add("Edit", "vSingleCraftDuration Number w100", 10)
+	key    := inputGui.Add("Edit", "vFfxivMacroKey Limit1 w100", "V")
 
-; singleCraftDuration - time in seconds for a single craft
-ffxivPenumbraAutoCraft(singleCraftDuration, msgBoxTitle) {
-	killOnCompletion := false
-	macroDuration := singleCraftDuration * NUM_OF_CRAFTS
-	MouseGetPos &ffxivXPos, &ffxivYPos
+	inputGui.Add("Text",, "`n`n")
 
-	response := displayMacroCraftTime(macroDuration, msgBoxTitle)
-	if (response = "No")
-		return
-	else if (response = "Cancel")
-		killOnCompletion := true
+	inputGui.AddCheckBox("vKillOnComplete xm", "Close FFXIV when Complete?")
+	inputGui.Add("Button", "Section Default w100 x50", "Start Autocraft").OnEvent("Click", ffxivPenumbraAutoCraft)
+	inputGui.Add("Button", "w100 ys", "Cancel Autocraft").OnEvent("Click", closeWindow(*) => inputGui.Destroy())
 
-	Loop NUM_OF_CRAFTS {
-		MouseGetPos &userXPos, &userYPos
-		ffxivClickSynthesize(ffxivXPos, ffxivYPos, userXPos, userYPos)
-		Sleep singleCraftDuration * 1000
+	try {
+		preferencesFile := FileOpen(PREFERENCES_FILENAME, "r-d")
+		preferences := preferencesFile.ReadLine()
+		prefArray := StrSplit(preferences, ",")
+		crafts.Value := prefArray[1]
+		time.Value := prefArray[2]
+		key.Value := prefArray[3]
+	} catch as Err {
+		; file doesn't exist or some other error but that's okay
 	}
 
-	; NOT FULLY TESTED
-	if (killOnCompletion = true) {
-		BlockInput true
-		WinActivate "FINAL FANTASY XIV"
-		WinGetPos ,,&W,&H, "A"
-		WinClose "FINAL FANTASY XIV"
-		MouseMove W/2 - 10, H/2 ; Move the cursor to confirm exit
-		Click "Down"
-		Sleep 25
-		Click "Up"
-		Sleep 25
-		BlockInput false
-	}
+	inputGui.Show()
 
-	MsgBox(
-		Format(
-			"Your {1} crafts of {2} are done! 😊",
-			NUM_OF_CRAFTS, msgBoxTitle
-		),
-		"Done!",
-	)
+	; Callback function when the Main Gui is finished
+	ffxivPenumbraAutoCraft(*) {
+		data := inputGui.Submit()
+
+		; Save Preferences
+		if (data.SaveAsDefault) {
+			try {
+				preferencesFile := FileOpen(PREFERENCES_FILENAME, "w")
+				preferencesFile.Write(Format("{1},{2},{3}", data.NumOfCrafts, data.SingleCraftDuration, data.FfxivMacroKey))
+				preferencesFile.Close()
+			} catch as Err {
+				MsgBox "Can't open '" PREFERENCES_FILENAME "' for writing."
+					. "`n`n" Type(Err) ": " Err.Message
+				return
+			}
+		}
+
+		macroDuration := data.SingleCraftDuration * data.NumOfCrafts
+
+		displayMacroCraftProgress(macroDuration, data.NumOfCrafts)
+
+		Loop data.NumOfCrafts {
+			MouseGetPos &userXPos, &userYPos ; Get the user's current mouse pos to restore to later
+			ffxivClickSynthesize(data.FfxivMacroKey, ffxivXPos, ffxivYPos, userXPos, userYPos)
+			; Insert here for the second key if enabled
+			Sleep data.SingleCraftDuration * 1000
+		}
+
+		if (data.KillOnComplete) {
+			BlockInput "MouseMove"
+			WinActivate "FINAL FANTASY XIV"
+			WinGetPos ,,&W,&H, "A"
+			WinClose "FINAL FANTASY XIV"
+			MouseMove W/2 - 50, H/2 - 10 ; Move the cursor to confirm exit
+			Click "Down"
+			Sleep 25
+			Click "Up"
+			Sleep 1000
+			BlockInput "MouseMoveOff"
+		}
+
+		MsgBox(
+			Format(
+				"Your {1} crafts are done! 😊",
+				data.NumOfCrafts,
+			),
+			"Done!",
+		)
+	}
 }
+
 
 ; Spaces the press and release because "Click" seems to be too fast.
-; Now minimizes taking control from the user
-ffxivClickSynthesize(ffxivXPos, ffxivYPos, userXPos, userYPos) {
+ffxivClickSynthesize(macroKey, ffxivXPos, ffxivYPos, userXPos, userYPos) {
 
 	; Take control from user
-	BlockInput true
+	BlockInput "On"
+	BlockInput "SendAndMouse"
+	BlockInput "MouseMove"
+
+	; Click Synthesize
 	WinActivate "FINAL FANTASY XIV"
 	Sleep 50
 	MouseMove ffxivXPos, ffxivYPos
@@ -89,32 +117,30 @@ ffxivClickSynthesize(ffxivXPos, ffxivYPos, userXPos, userYPos) {
 	Click "Up"
 	Sleep 25
 
-	; Restore control briefly
-	MouseMove userXPos, userYPos
-	BlockInput false
+	; Too many issues if we restore control in the middle
 
 	Sleep 1000 ; Wait for craft window to appear
-
-	; Take Control again
-	BlockInput true
 	WinActivate "FINAL FANTASY XIV"
 	Sleep 50
-	Send FFXIV_CRAFT_BUTTON
+	Send macroKey
+	Sleep 25
 
 	; Restore control
 	MouseMove userXPos, userYPos
-	BlockInput false
+
+	BlockInput "MouseMoveOff"
+	BlockInput "Default"
+	BlockInput "Off"
 }
 
 ; Duration in seconds
-displayMacroCraftTime(macroDuration, msgBoxTitle){
+; Change to a progress bar for a visual indication of progress over time???
+displayMacroCraftProgress(macroDuration, numOfCrafts){
 	completionTime := DateAdd(A_Now, macroDuration, "Seconds")
-	return response := MsgBox(
+	MsgBox(
 		Format(
-			"Your {1} crafts will complete at {2} ({3} minutes).`nWould you like to continue?`n(cancel means to close FFXIV after crafts complete)",
-			NUM_OF_CRAFTS, FormatTime(completionTime, "h:m:ss tt"), Round(macroDuration/60, 2)
-		),
-		msgBoxTitle,
-		0x23 ; YesNoCancel AND Question Icon
+			"Your {1} crafts will complete at {2} ({3} minutes).",
+			numOfCrafts, FormatTime(completionTime, "h:m:ss tt"), Round(macroDuration/60, 2)
+		), "Autocraft Progress", "Iconi"
 	)
 }
