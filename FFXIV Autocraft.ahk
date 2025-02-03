@@ -22,15 +22,20 @@ MARGIN_LEFT := " x30 "
 	WinSetTransColor((inputGui.BackColor := "010101") ' 255', inputGui)
 
 	; Adding the image here because doing it the other way makes all the other units have transparent backgrounds
-	inputGui.AddPicture("w700 h500", "bg.png")
+	inputGui.Add("Picture","w700 h550", "bg.png")
 
 	; HEADER
 	inputGui.SetFont(HEADING_TEXT_STYLE, "Meiryo")
 	inputGui.AddText("Section BackgroundTrans" . MARGIN_LEFT . MARGIN_TOP, PROGRAM_TITLE)
-	inputGui.AddPicture("BackgroundTrans ys x660", "quit.png").OnEvent("Click", (*) => ExitApp())
-	inputGui.AddPicture("BackgroundTrans w650 xs", "bar.png")
+	inputGui.Add("Picture","BackgroundTrans ys x660", "quit.png").OnEvent("Click", (*) => ExitApp())
+	inputGui.Add("Picture","BackgroundTrans w650 xs", "bar.png")
 
 	; PROFILES
+	inputGui.SetFont(SUBHEADING_TEXT_STYLE, "Meiryo")
+	inputGui.Add("Text", "BackgroundTrans Section", "Profile")
+	inputGui.Add("DropDownList", "vProfile Background262626 ys h100 w270", [])
+	inputGui.Add("Button", "ys", "Delete Profile")
+	inputGui.Add("Picture", "BackgroundTrans w650 xs", "bar.png")
 
 	; MACROS
 	inputGui.SetFont(SUBHEADING_TEXT_STYLE, "Meiryo")
@@ -38,6 +43,8 @@ MARGIN_LEFT := " x30 "
 	inputGui.Add("Picture", "BackgroundTrans w315 xs", "bar.png")
 
 	inputGui.SetFont(BODY_TEXT_STYLE, "Meiryo")
+	inputGui.Add("Text", "BackgroundTrans xp", "Profile Name:")
+	inputGui.Add("Edit", "vProfileName yp" . EDIT_STYLE . "Left w182", "")
 	inputGui.Add("Text", "BackgroundTrans xs", "Macro 1: ")
 	inputGui.Add("Edit", "vMacro1Button yp Center" . EDIT_STYLE, "V")
 	inputGui.Add("Edit", "vMacro1Duration Number Limit2 yp" . SMALL_EDIT_STYLE, 10)
@@ -49,7 +56,6 @@ MARGIN_LEFT := " x30 "
 
 	inputGui.Add("Text", "BackgroundTrans xs", "Number of Crafts:")
 	crafts := inputGui.Add("Edit", "vNumOfCrafts Number Limit2 yp" . EDIT_STYLE, 1)
-
 
 	; CONSUMABLES
 	inputGui.SetFont(SUBHEADING_TEXT_STYLE, "Meiryo")
@@ -78,15 +84,15 @@ MARGIN_LEFT := " x30 "
 		]
 	)
 
-	progressBar := inputGui.Add("Progress", "xp x30 y260 w650 Background262626 cA3CC43 Border", 10)
+	progressBar := inputGui.Add("Progress", "xp x30 y315 w650 Background262626 cA3CC43 Border", 10)
 	completionTimeText := inputGui.Add("Text", "xp  Background262626", "Time to completion: 0")
 
 	; Bottom Section
-	inputGui.AddCheckBox("vKillOnComplete xp x30 y335 Background262626", "Close FFXIV when Complete?")
+	inputGui.Add("CheckBox", "vKillOnComplete xp x30 y385 Background262626", "Close FFXIV when Complete?")
 
-	synthBtn := inputGui.Add("Button", "Section Default w100 h128 xp", "Start Autocraft")
-	synthBtn.OnEvent("Click", ffxivPenumbraAutoCraft)
-	infoLog := inputGui.Add("Edit", "yp ReadOnly Background262626 r6 w550", "Welcome to the Auto Craft Companion!")
+	synthBtn := inputGui.Add("Button", "Section Default w100 h64 xp", "Start Autocraft").OnEvent("Click", ffxivPenumbraAutoCraft)
+	synthBtn := inputGui.Add("Button", "w100 h57 xp", "Save as`nNew Profile").OnEvent("Click", (*) => log("Saved Profile"))
+	infoLog  := inputGui.Add("Edit", "ys ReadOnly Background262626 r6 w550", "Welcome to the Auto Craft Companion!")
 
 	try {
 		preferencesFile := FileOpen(PREFERENCES_FILENAME, "r-d")
@@ -114,7 +120,7 @@ MARGIN_LEFT := " x30 "
 
 		completionTimeText.Value := Format(
 			"Completion Time:`n{1}`n({2} Minutes)",
-			FormatTime(completionTime, "h:m:ss tt"),
+			FormatTime(completionTime, "hh:mm:ss tt"),
 			Round(macroDuration/60, 2)
 		)
 
@@ -164,7 +170,7 @@ MARGIN_LEFT := " x30 "
 
 
 	log(text) {
-		infoLog.Value := infoLog.Value . "`n" . Format("[{1}] {2}", FormatTime(A_Now, "h:m:ss tt"), text)
+		infoLog.Value := infoLog.Value . "`n" . Format("[{1}] {2}", FormatTime(A_Now, "hh:mm:ss tt"), text)
 	}
 }
 
