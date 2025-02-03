@@ -2,6 +2,8 @@
 
 Set FFXIV to windowed mode and move it to another monitor/to the side, hover over "Synthesize", start the macro with AutoHotKey and enjoy some YouTube while you make that Gil!
 
+Use `Ctrl + K` to start the hot key.
+
 ## TODO
 
 - [ ] Add the option to use 2 keys for a two step macro i.e. not relying on the penumbra plugin "Macrochain"

@@ -1,28 +1,92 @@
 ﻿#Requires AutoHotkey v2.0
-#HotIf WinActive("FINAL FANTASY XIV")
+; #HotIf WinActive("FINAL FANTASY XIV")
 
-PREFERENCES_FILENAME := "ffxiv_autocraft_preferences.txt"
+PROGRAM_TITLE := "Auto Craft Companion"
+PREFERENCES_FILENAME 	:= "ffxiv_autocraft_preferences.txt"
+HEADING_TEXT_STYLE		:= "cCCCCCC s16 q0 w700"
+SUBHEADING_TEXT_STYLE	:= "c828282 s12 q0 w400"
+BODY_TEXT_STYLE 		:= " cCCCCCC s12 q0 w400 "
+EDIT_STYLE 				:= " cCCCCCC Background262626 Center Border w175 "
+SMALL_EDIT_STYLE 		:= " cCCCCCC Background262626 Center Border w30 "
+
+MARGIN_TOP := " y20 "
+MARGIN_LEFT := " x30 "
 
 ; Right Ctrl + K.
 >^k::
 {
 	MouseGetPos &ffxivXPos, &ffxivYPos ; Save where the Synthesize button is in the FFXIV window
-	inputGui := Gui(, "FFXIV Autocraft")
+	inputGui := Gui("-Caption", PROGRAM_TITLE)
 
-	inputGui.Add("Text","Section", "Number of Crafts:")
-	inputGui.Add("Text",, "Time per one craft in seconds: ")
-	inputGui.Add("Text",, "Key to press: ")
-	inputGui.AddCheckBox("vSaveAsDefault", "Save as defaults?")
+	inputGui.SetFont("cWhite", "Meiryo")
+	WinSetTransColor((inputGui.BackColor := "010101") ' 255', inputGui)
 
-	crafts := inputGui.Add("Edit", "vNumOfCrafts Number Limit2 ys w100", 1)
-	time   := inputGui.Add("Edit", "vSingleCraftDuration Number w100", 10)
-	key    := inputGui.Add("Edit", "vFfxivMacroKey Limit1 w100", "V")
+	; Adding the image here because doing it the other way makes all the other units have transparent backgrounds
+	inputGui.AddPicture("w700 h500", "bg.png")
 
-	inputGui.Add("Text",, "`n`n")
+	; HEADER
+	inputGui.SetFont(HEADING_TEXT_STYLE, "Meiryo")
+	inputGui.AddText("Section BackgroundTrans" . MARGIN_LEFT . MARGIN_TOP, PROGRAM_TITLE)
+	inputGui.AddPicture("BackgroundTrans ys x660", "quit.png").OnEvent("Click", (*) => ExitApp())
+	inputGui.AddPicture("BackgroundTrans w650 xs", "bar.png")
 
-	inputGui.AddCheckBox("vKillOnComplete xm", "Close FFXIV when Complete?")
-	inputGui.Add("Button", "Section Default w100 x50", "Start Autocraft").OnEvent("Click", ffxivPenumbraAutoCraft)
-	inputGui.Add("Button", "w100 ys", "Cancel Autocraft").OnEvent("Click", closeWindow(*) => inputGui.Destroy())
+	; PROFILES
+
+	; MACROS
+	inputGui.SetFont(SUBHEADING_TEXT_STYLE, "Meiryo")
+	inputGui.Add("Text", "BackgroundTrans Section", "Macro Key and Duration in Seconds")
+	inputGui.Add("Picture", "BackgroundTrans w315 xs", "bar.png")
+
+	inputGui.SetFont(BODY_TEXT_STYLE, "Meiryo")
+	inputGui.Add("Text", "BackgroundTrans xs", "Macro 1: ")
+	inputGui.Add("Edit", "vMacro1Button yp Center" . EDIT_STYLE, "V")
+	inputGui.Add("Edit", "vMacro1Duration Number Limit2 yp" . SMALL_EDIT_STYLE, 10)
+
+	inputGui.Add("Text", "BackgroundTrans xs" . MARGIN_LEFT, "Macro 2: ")
+	inputGui.Add("Edit", "vMacro2Button yp" . EDIT_STYLE, "T")
+	inputGui.Add("Edit", "vMacro2Duration Number Limit2 yp" . SMALL_EDIT_STYLE, 10)
+	inputGui.Add("Checkbox", "Checked Background262626 yp h25", "")
+
+	inputGui.Add("Text", "BackgroundTrans xs", "Number of Crafts:")
+	crafts := inputGui.Add("Edit", "vNumOfCrafts Number Limit2 yp" . EDIT_STYLE, 1)
+
+
+	; CONSUMABLES
+	inputGui.SetFont(SUBHEADING_TEXT_STYLE, "Meiryo")
+	inputGui.Add("Text", "BackgroundTrans ys Section", "Consumables and Time Remaining")
+	inputGui.Add("Picture", "BackgroundTrans xp w315", "bar.png")
+
+	inputGui.SetFont(BODY_TEXT_STYLE, "Meiryo")
+
+	inputGui.Add("Text", "BackgroundTrans xs", "Food:   ")
+	inputGui.Add("Edit", "vFoodButton yp Center" . EDIT_STYLE, "Num2")
+	inputGui.Add("Edit", "vFoodDuration Number Limit2 yp" . SMALL_EDIT_STYLE, 10)
+	inputGui.Add("Checkbox", "Checked Background262626 yp h25", "")
+
+
+	inputGui.Add("Text", "BackgroundTrans Section xs", "Potion: ")
+	inputGui.Add("Edit", "vPotionButton yp" . EDIT_STYLE, "Num1")
+	inputGui.Add("Edit", "vPotionDuration Number Limit2 yp" . SMALL_EDIT_STYLE, 10)
+	inputGui.Add("Checkbox", "Checked Background262626 yp h25", "")
+
+	inputGui.Add("Text", "BackgroundTrans xs", "Any Food Duration Buffs?")
+	inputGui.Add("DropDownList", "vFoodBuff Background262626 xp w270 Choose1", [
+		"No Buffs (30 min)",
+		"Meat and Mead (35 min)",
+		"Meat and Mead II (40 min)",
+		"Squadron Rationing Manual (45 min)"
+		]
+	)
+
+	progressBar := inputGui.Add("Progress", "xp x30 y260 w650 Background262626 cA3CC43 Border", 10)
+	completionTimeText := inputGui.Add("Text", "xp  Background262626", "Time to completion: 0")
+
+	; Bottom Section
+	inputGui.AddCheckBox("vKillOnComplete xp x30 y335 Background262626", "Close FFXIV when Complete?")
+
+	synthBtn := inputGui.Add("Button", "Section Default w100 h128 xp", "Start Autocraft")
+	synthBtn.OnEvent("Click", ffxivPenumbraAutoCraft)
+	infoLog := inputGui.Add("Edit", "yp ReadOnly Background262626 r6 w550", "Welcome to the Auto Craft Companion!")
 
 	try {
 		preferencesFile := FileOpen(PREFERENCES_FILENAME, "r-d")
@@ -37,9 +101,24 @@ PREFERENCES_FILENAME := "ffxiv_autocraft_preferences.txt"
 
 	inputGui.Show()
 
+	;Move the Gui while the left mouse button is down
+	OnMessage(0x0201, (*) => PostMessage(0x00A1, 2, 0, inputGui))
+
 	; Callback function when the Main Gui is finished
 	ffxivPenumbraAutoCraft(*) {
-		data := inputGui.Submit()
+		log("Starting Craft")
+		data := inputGui.Submit(false) ; Do not hide the window when start is hit
+
+		macroDuration := data.SingleCraftDuration * data.NumOfCrafts
+		completionTime := DateAdd(A_Now, macroDuration, "Seconds")
+
+		completionTimeText.Value := Format(
+			"Completion Time:`n{1}`n({2} Minutes)",
+			FormatTime(completionTime, "h:m:ss tt"),
+			Round(macroDuration/60, 2)
+		)
+
+		return
 
 		; Save Preferences
 		if (data.SaveAsDefault) {
@@ -53,10 +132,6 @@ PREFERENCES_FILENAME := "ffxiv_autocraft_preferences.txt"
 				return
 			}
 		}
-
-		macroDuration := data.SingleCraftDuration * data.NumOfCrafts
-
-		displayMacroCraftProgress(macroDuration, data.NumOfCrafts)
 
 		Loop data.NumOfCrafts {
 			MouseGetPos &userXPos, &userYPos ; Get the user's current mouse pos to restore to later
@@ -85,6 +160,11 @@ PREFERENCES_FILENAME := "ffxiv_autocraft_preferences.txt"
 			),
 			"Done!",
 		)
+	}
+
+
+	log(text) {
+		infoLog.Value := infoLog.Value . "`n" . Format("[{1}] {2}", FormatTime(A_Now, "h:m:ss tt"), text)
 	}
 }
 
@@ -120,16 +200,4 @@ ffxivClickSynthesize(macroKey, ffxivXPos, ffxivYPos, userXPos, userYPos) {
 	BlockInput "MouseMoveOff"
 	BlockInput "Default"
 	BlockInput "Off"
-}
-
-; Duration in seconds
-; Change to a progress bar for a visual indication of progress over time???
-displayMacroCraftProgress(macroDuration, numOfCrafts){
-	completionTime := DateAdd(A_Now, macroDuration, "Seconds")
-	MsgBox(
-		Format(
-			"Your {1} crafts will complete at {2} ({3} minutes).",
-			numOfCrafts, FormatTime(completionTime, "h:m:ss tt"), Round(macroDuration/60, 2)
-		), "Autocraft Progress", "Iconi"
-	)
 }
