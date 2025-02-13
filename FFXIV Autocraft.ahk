@@ -2,19 +2,24 @@
 ; #HotIf WinActive("FINAL FANTASY XIV")
 
 PROGRAM_TITLE := "Auto Craft Companion"
-PREFERENCES_FILENAME 	:= "ffxiv_autocraft_preferences.txt"
+PREFERENCES_FILENAME 	:= "ffxiv_auto_craft_companion_profiles.ini"
 HEADING_TEXT_STYLE		:= "cCCCCCC s16 q0 w700"
 SUBHEADING_TEXT_STYLE	:= "c828282 s12 q0 w400"
 BODY_TEXT_STYLE 		:= " cCCCCCC s12 q0 w400 "
 EDIT_STYLE 				:= " cCCCCCC Background262626 Center Border w175 "
 SMALL_EDIT_STYLE 		:= " cCCCCCC Background262626 Center Border w30 "
 
-MARGIN_TOP := " y20 "
+MARGIN_TOP  := " y20 "
 MARGIN_LEFT := " x30 "
 
 ; Right Ctrl + K.
 >^k::
 {
+	if (WinExist(PROGRAM_TITLE)) {
+		; Can we allow the user to reset their cursor position here?
+		return
+	}
+
 	MouseGetPos &ffxivXPos, &ffxivYPos ; Save where the Synthesize button is in the FFXIV window
 	inputGui := Gui("-Caption", PROGRAM_TITLE)
 
@@ -33,8 +38,9 @@ MARGIN_LEFT := " x30 "
 	; PROFILES
 	inputGui.SetFont(SUBHEADING_TEXT_STYLE, "Meiryo")
 	inputGui.Add("Text", "BackgroundTrans Section", "Profile")
-	inputGui.Add("DropDownList", "vProfile Background262626 ys h100 w270", [])
-	inputGui.Add("Button", "ys", "Delete Profile")
+	profilesList := inputGui.Add("DropDownList", "vProfile Background262626 ys h100 w270", [])
+	profilesList.OnEvent("Change", loadPreferences)
+	inputGui.Add("Button", "ys", "Delete Profile").OnEvent("Click", deleteProfile)
 	inputGui.Add("Picture", "BackgroundTrans w650 xs", "bar.png")
 
 	; MACROS
@@ -44,18 +50,18 @@ MARGIN_LEFT := " x30 "
 
 	inputGui.SetFont(BODY_TEXT_STYLE, "Meiryo")
 	inputGui.Add("Text", "BackgroundTrans xp", "Profile Name:")
-	inputGui.Add("Edit", "vProfileName yp" . EDIT_STYLE . "Left w182", "")
+	profileNameEdit := inputGui.Add("Edit", "vProfileName yp" . EDIT_STYLE . "Left w182", "Default")
 	inputGui.Add("Text", "BackgroundTrans xs", "Macro 1: ")
-	inputGui.Add("Edit", "vMacro1Button yp Center" . EDIT_STYLE, "V")
-	inputGui.Add("Edit", "vMacro1Duration Number Limit2 yp" . SMALL_EDIT_STYLE, 10)
+	macro1ButtonEdit := inputGui.Add("Edit", "vMacro1Button yp Center" . EDIT_STYLE, "V")
+	macro1DurationEdit := inputGui.Add("Edit", "vMacro1Duration Number Limit2 yp" . SMALL_EDIT_STYLE, 10)
 
 	inputGui.Add("Text", "BackgroundTrans xs" . MARGIN_LEFT, "Macro 2: ")
-	inputGui.Add("Edit", "vMacro2Button yp" . EDIT_STYLE, "T")
-	inputGui.Add("Edit", "vMacro2Duration Number Limit2 yp" . SMALL_EDIT_STYLE, 10)
-	inputGui.Add("Checkbox", "Checked Background262626 yp h25", "")
+	macro2ButtonEdit := inputGui.Add("Edit", "vMacro2Button yp" . EDIT_STYLE, "T")
+	macro2DurationEdit := inputGui.Add("Edit", "vMacro2Duration Number Limit2 yp" . SMALL_EDIT_STYLE, 10)
+	macro2EnabledCheckbox := inputGui.Add("Checkbox", "vMacro2Enabled Checked Background262626 yp h25", "")
 
 	inputGui.Add("Text", "BackgroundTrans xs", "Number of Crafts:")
-	crafts := inputGui.Add("Edit", "vNumOfCrafts Number Limit2 yp" . EDIT_STYLE, 1)
+	numOfCraftsEdit := inputGui.Add("Edit", "vNumOfCrafts Number Limit2 yp" . EDIT_STYLE, 1)
 
 	; CONSUMABLES
 	inputGui.SetFont(SUBHEADING_TEXT_STYLE, "Meiryo")
@@ -65,18 +71,17 @@ MARGIN_LEFT := " x30 "
 	inputGui.SetFont(BODY_TEXT_STYLE, "Meiryo")
 
 	inputGui.Add("Text", "BackgroundTrans xs", "Food:   ")
-	inputGui.Add("Edit", "vFoodButton yp Center" . EDIT_STYLE, "Num2")
-	inputGui.Add("Edit", "vFoodDuration Number Limit2 yp" . SMALL_EDIT_STYLE, 10)
-	inputGui.Add("Checkbox", "Checked Background262626 yp h25", "")
-
+	foodButtonEdit := inputGui.Add("Edit", "vFoodButton yp Center" . EDIT_STYLE, "Num2")
+	foodDurationEdit := inputGui.Add("Edit", "vFoodDuration Number Limit2 yp" . SMALL_EDIT_STYLE, 10)
+	foodEnabledCheckbox := inputGui.Add("Checkbox", "vFoodEnabled Checked Background262626 yp h25", "")
 
 	inputGui.Add("Text", "BackgroundTrans Section xs", "Potion: ")
-	inputGui.Add("Edit", "vPotionButton yp" . EDIT_STYLE, "Num1")
-	inputGui.Add("Edit", "vPotionDuration Number Limit2 yp" . SMALL_EDIT_STYLE, 10)
-	inputGui.Add("Checkbox", "Checked Background262626 yp h25", "")
+	potionButtonEdit := inputGui.Add("Edit", "vPotionButton yp" . EDIT_STYLE, "Num1")
+	potionDurationEdit := inputGui.Add("Edit", "vPotionDuration Number Limit2 yp" . SMALL_EDIT_STYLE, 10)
+	potionEnabledCheckbox := inputGui.Add("Checkbox", "vPotionEnabled Checked Background262626 yp h25", "")
 
 	inputGui.Add("Text", "BackgroundTrans xs", "Any Food Duration Buffs?")
-	inputGui.Add("DropDownList", "vFoodBuff Background262626 xp w270 Choose1", [
+	foodBuffDropDown := inputGui.Add("DropDownList", "vFoodBuff Background262626 xp w270 Choose1 AltSubmit", [
 		"No Buffs (30 min)",
 		"Meat and Mead (35 min)",
 		"Meat and Mead II (40 min)",
@@ -88,22 +93,13 @@ MARGIN_LEFT := " x30 "
 	completionTimeText := inputGui.Add("Text", "xp  Background262626", "Time to completion: 0")
 
 	; Bottom Section
-	inputGui.Add("CheckBox", "vKillOnComplete xp x30 y385 Background262626", "Close FFXIV when Complete?")
+	killOnComplete := inputGui.Add("CheckBox", "vKillOnComplete xp x30 y385 Background262626", "Close FFXIV when Complete?")
 
-	synthBtn := inputGui.Add("Button", "Section Default w100 h64 xp", "Start Autocraft").OnEvent("Click", ffxivPenumbraAutoCraft)
-	synthBtn := inputGui.Add("Button", "w100 h57 xp", "Save as`nNew Profile").OnEvent("Click", (*) => log("Saved Profile"))
+	inputGui.Add("Button", "Section Default w100 h64 xp", "Start Autocraft").OnEvent("Click", ffxivPenumbraAutoCraft)
+	inputGui.Add("Button", "w100 h57 xp", "Save`nProfile")			.OnEvent("Click", savePreferences)
 	infoLog  := inputGui.Add("Edit", "ys ReadOnly Background262626 r6 w550", "Welcome to the Auto Craft Companion!")
 
-	try {
-		preferencesFile := FileOpen(PREFERENCES_FILENAME, "r-d")
-		preferences := preferencesFile.ReadLine()
-		prefArray := StrSplit(preferences, ",")
-		crafts.Value := prefArray[1]
-		time.Value := prefArray[2]
-		key.Value := prefArray[3]
-	} catch as Err {
-		; file doesn't exist or some other error but that's okay
-	}
+	updatePreferencesDropDown() ; Load the whole gui before we try setting anything
 
 	inputGui.Show()
 
@@ -126,19 +122,6 @@ MARGIN_LEFT := " x30 "
 
 		return
 
-		; Save Preferences
-		if (data.SaveAsDefault) {
-			try {
-				preferencesFile := FileOpen(PREFERENCES_FILENAME, "w")
-				preferencesFile.Write(Format("{1},{2},{3}", data.NumOfCrafts, data.SingleCraftDuration, data.FfxivMacroKey))
-				preferencesFile.Close()
-			} catch as Err {
-				MsgBox "Can't open '" PREFERENCES_FILENAME "' for writing."
-					. "`n`n" Type(Err) ": " Err.Message
-				return
-			}
-		}
-
 		Loop data.NumOfCrafts {
 			MouseGetPos &userXPos, &userYPos ; Get the user's current mouse pos to restore to later
 			ffxivClickSynthesize(data.FfxivMacroKey, ffxivXPos, ffxivYPos, userXPos, userYPos)
@@ -159,18 +142,84 @@ MARGIN_LEFT := " x30 "
 			BlockInput "MouseMoveOff"
 		}
 
-		MsgBox(
-			Format(
-				"Your {1} crafts are done! 😊",
-				data.NumOfCrafts,
-			),
-			"Done!",
-		)
+		log(Format("Your {1} crafts are done! 😊", data.NumOfCrafts))
 	}
 
+	; Default behavior is to choose the first option in the list
+	updatePreferencesDropDown(resetOption := true, selectProfile := "") {
+		profiles := IniRead(PREFERENCES_FILENAME,,, 0)
+		if (!profiles) {
+			; Create the file and save the default settings as a profile
+			file := FileOpen(PREFERENCES_FILENAME, "w")
+			file.Close()
+			savePreferences()
+			return
+		}
+		profiles := StrSplit(profiles, "`n")
 
-	log(text) {
-		infoLog.Value := infoLog.Value . "`n" . Format("[{1}] {2}", FormatTime(A_Now, "hh:mm:ss tt"), text)
+		oldOption := profilesList.Text
+		profilesList.Delete()
+		profilesList.Add(profiles)
+
+		if (resetOption) {
+			profilesList.Choose(1)
+		} else if (StrLen(selectProfile)) {
+			profilesList.Choose(selectProfile)
+		} else {
+			profilesList.Choose(oldOption)
+		}
+	}
+
+	savePreferences(*) {
+		data := inputGui.Submit(false)
+		log(Format("Saving {1} Profile", data.ProfileName))
+		IniWrite(data.Macro1Button, 	PREFERENCES_FILENAME, data.ProfileName,	"MACRO_1_BIND")
+		IniWrite(data.Macro1Duration,	PREFERENCES_FILENAME, data.ProfileName,	"MACRO_1_DURATION")
+		IniWrite(data.Macro2Button,		PREFERENCES_FILENAME, data.ProfileName,	"MACRO_2_BIND")
+		IniWrite(data.Macro2Duration, 	PREFERENCES_FILENAME, data.ProfileName,	"MACRO_2_DURATION")
+		IniWrite(data.Macro2Enabled, 	PREFERENCES_FILENAME, data.ProfileName,	"MACRO_2_ENABLED")
+		IniWrite(data.NumOfCrafts, 		PREFERENCES_FILENAME, data.ProfileName, "NUMBER_OF_CRAFTS")
+		IniWrite(data.FoodButton, 		PREFERENCES_FILENAME, data.ProfileName, "FOOD_BIND")
+		IniWrite(data.FoodDuration, 	PREFERENCES_FILENAME, data.ProfileName, "FOOD_TIME_REMAINING")
+		IniWrite(data.FoodEnabled, 		PREFERENCES_FILENAME, data.ProfileName, "FOOD_MACRO_ENABLED")
+		IniWrite(data.FoodBuff, 		PREFERENCES_FILENAME, data.ProfileName, "FOOD_DURATION_BUFFS")
+		IniWrite(data.PotionButton, 	PREFERENCES_FILENAME, data.ProfileName, "POTION_BIND")
+		IniWrite(data.PotionDuration, 	PREFERENCES_FILENAME, data.ProfileName,	"POTION_TIME_REMAINING")
+		IniWrite(data.PotionEnabled, 	PREFERENCES_FILENAME, data.ProfileName, "POTION_MACRO_ENABLED")
+		IniWrite(data.KillOnComplete, 	PREFERENCES_FILENAME, data.ProfileName, "CLOSE_FFXIV_WHEN_DONE")
+		updatePreferencesDropDown(false, data.ProfileName)
+	}
+
+	loadPreferences(*) {
+		log(Format("Loading {1} Profile", profilesList.Text))
+		macro1ButtonEdit.Value		:= IniRead(PREFERENCES_FILENAME, profilesList.Text, "MACRO_1_BIND")
+		macro1DurationEdit.Value 	:= IniRead(PREFERENCES_FILENAME, profilesList.Text, "MACRO_1_DURATION")
+		macro2ButtonEdit.Value 		:= IniRead(PREFERENCES_FILENAME, profilesList.Text, "MACRO_2_BIND")
+		macro2DurationEdit.Value 	:= IniRead(PREFERENCES_FILENAME, profilesList.Text, "MACRO_2_DURATION")
+		macro2EnabledCheckbox.Value := IniRead(PREFERENCES_FILENAME, profilesList.Text, "MACRO_2_ENABLED")
+		numOfCraftsEdit.Value 		:= IniRead(PREFERENCES_FILENAME, profilesList.Text, "NUMBER_OF_CRAFTS")
+		foodButtonEdit.Value 		:= IniRead(PREFERENCES_FILENAME, profilesList.Text, "FOOD_BIND")
+		foodDurationEdit.Value 		:= IniRead(PREFERENCES_FILENAME, profilesList.Text, "FOOD_TIME_REMAINING")
+		foodEnabledCheckbox.Value 	:= IniRead(PREFERENCES_FILENAME, profilesList.Text, "FOOD_MACRO_ENABLED")
+		foodBuffDropDown.Choose(Number(IniRead(PREFERENCES_FILENAME, profilesList.Text, "FOOD_DURATION_BUFFS")))
+		potionButtonEdit.Value 		:= IniRead(PREFERENCES_FILENAME, profilesList.Text, "POTION_BIND")
+		potionDurationEdit.Value 	:= IniRead(PREFERENCES_FILENAME, profilesList.Text, "POTION_TIME_REMAINING")
+		potionEnabledCheckbox.Value := IniRead(PREFERENCES_FILENAME, profilesList.Text, "POTION_MACRO_ENABLED")
+		killOnComplete.Value 		:= IniRead(PREFERENCES_FILENAME, profilesList.Text, "CLOSE_FFXIV_WHEN_DONE")
+	}
+
+	deleteProfile(*) {
+		log(Format("Deleting {1} Profile", profilesList.Text))
+		IniDelete(PREFERENCES_FILENAME, profilesList.Text)
+		updatePreferencesDropDown()
+	}
+
+	log(text, addToLastLine := false) {
+		if (addToLastLine) {
+			infoLog.Value := infoLog.Value . " " . text
+		} else {
+			infoLog.Value := infoLog.Value . '`n' . Format("[{1}] {2}", FormatTime(A_Now, "hh:mm:ss tt"), text)
+		}
 	}
 }
 
