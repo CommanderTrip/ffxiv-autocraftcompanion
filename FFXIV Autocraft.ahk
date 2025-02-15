@@ -1,6 +1,7 @@
 ﻿#Requires AutoHotkey v2.0
 ; #HotIf WinActive("FINAL FANTASY XIV")
 
+FFXIV := "FINAL FANTASY XIV"
 PROGRAM_TITLE := "Auto Craft Companion"
 PREFERENCES_FILENAME 	:= "ffxiv_auto_craft_companion_profiles.ini"
 HEADING_TEXT_STYLE		:= "cCCCCCC s16 q0 w700"
@@ -89,64 +90,106 @@ MARGIN_LEFT := " x30 "
 		]
 	)
 
-	progressBar := inputGui.Add("Progress", "xp x30 y315 w650 Background262626 cA3CC43 Border", 10)
-	completionTimeText := inputGui.Add("Text", "xp  Background262626", "Time to completion: 0")
+	progressBar := inputGui.Add("Progress", "xp x30 y315 w650 Background262626 cA3CC43 Border Smooth", 0)
+	completionTimeText := inputGui.Add("Text", "xp w500 Background262626", "Completion Time: 0")
 
 	; Bottom Section
 	killOnComplete := inputGui.Add("CheckBox", "vKillOnComplete xp x30 y385 Background262626", "Close FFXIV when Complete?")
 
-	inputGui.Add("Button", "Section Default w100 h64 xp", "Start Autocraft").OnEvent("Click", ffxivPenumbraAutoCraft)
-	inputGui.Add("Button", "w100 h57 xp", "Save`nProfile")			.OnEvent("Click", savePreferences)
+	startButton := inputGui.Add("Button", "Section Default w100 h64 xp", "Start Autocraft")
+	startButton.OnEvent("Click", ffxivPenumbraAutoCraft)
+	inputGui.Add("Button", "w100 h57 xp", "Save`nProfile").OnEvent("Click", savePreferences)
 	infoLog  := inputGui.Add("Edit", "ys ReadOnly Background262626 r6 w550", "Welcome to the Auto Craft Companion!")
 
-	updatePreferencesDropDown() ; Load the whole gui before we try setting anything
+	updatePreferencesDropDown(true) ; Load the whole gui before we try setting anything
+
+	quitCraft := false
+	crafting := false
+	completionTime := ""
+	macroDuration := ""
+	craftsCompleted := 0
+	singleCraftDuration := 0
+	memento := ""
+	foodRefresh := ""
+	potRefresh := ""
 
 	inputGui.Show()
-
-	;Move the Gui while the left mouse button is down
-	OnMessage(0x0201, (*) => PostMessage(0x00A1, 2, 0, inputGui))
+	OnMessage(0x0201, (*) => PostMessage(0x00A1, 2, 0, inputGui)) ;Move the Gui while the left mouse button is down
 
 	; Callback function when the Main Gui is finished
 	ffxivPenumbraAutoCraft(*) {
-		log("Starting Craft")
-		data := inputGui.Submit(false) ; Do not hide the window when start is hit
+		; if (!crafting) {
+		; 	startButton.Text := "Cancel Craft"
+		; } else {
+		; 	log("Canceling Craft")
+		; 	startButton.Text := "Start Autocraft"
+		; 	startButton.Opt("+Disabled")
+		; 	return
+		; }
 
-		macroDuration := data.SingleCraftDuration * data.NumOfCrafts
+		memento := inputGui.Submit(false) ; Do not hide the window when start is hit
+		log(Format("Starting Craft Profile: {1}", memento.ProfileName))
+
+		craftsCompleted := 0
+		craftWindowPaddingSeconds := 2
+		singleCraftDuration := memento.Macro1Duration + memento.Macro2Duration * memento.Macro2Enabled + craftWindowPaddingSeconds
+		macroDuration := singleCraftDuration * memento.NumOfCrafts
 		completionTime := DateAdd(A_Now, macroDuration, "Seconds")
+		foodRefresh := DateAdd(A_Now, memento.PotionDuration * 60, "Seconds")
+		potRefresh := DateAdd(A_Now, memento.FoodDuration * 60, "Seconds")
 
-		completionTimeText.Value := Format(
-			"Completion Time:`n{1}`n({2} Minutes)",
-			FormatTime(completionTime, "hh:mm:ss tt"),
-			Round(macroDuration/60, 2)
-		)
 
-		return
+		; Start Timers
+		SetTimer(updateCompletionTime, 1)
+		SetTimer(craftingLoop, 1)
 
-		Loop data.NumOfCrafts {
-			MouseGetPos &userXPos, &userYPos ; Get the user's current mouse pos to restore to later
-			ffxivClickSynthesize(data.FfxivMacroKey, ffxivXPos, ffxivYPos, userXPos, userYPos)
-			; Insert here for the second key if enabled
-			Sleep data.SingleCraftDuration * 1000
+	}
+
+	craftingLoop() {
+		SetTimer(, singleCraftDuration * 1000)
+
+		if (craftsCompleted = numOfCraftsEdit.Value) {
+			SetTimer(, 0)
+			progressBar.Value := 100
+			log(Format("{1} crafts of {2} complete! 😊", craftsCompleted, profilesList.Text))
+			closeFfxiv(memento.KillOnComplete)
+			return
 		}
 
-		if (data.KillOnComplete) {
-			BlockInput "MouseMove"
-			WinActivate "FINAL FANTASY XIV"
-			WinGetPos ,,&W,&H, "A"
-			WinClose "FINAL FANTASY XIV"
-			MouseMove W/2 - 50, H/2 - 10 ; Move the cursor to confirm exit
-			Click "Down"
-			Sleep 25
-			Click "Up"
+		; Reup Food if needed
+		if (memento.FoodEnabled && DateDiff(A_Now, foodRefresh, "Seconds") >= 0) {
+			log("Refreshing food buff")
+			ControlSend(memento.FoodButton, , FFXIV)
 			Sleep 1000
-			BlockInput "MouseMoveOff"
+			foodRefresh := DateAdd(A_Now, (memento.FoodBuff * 5 + 25) * 60, "Seconds")
 		}
 
-		log(Format("Your {1} crafts are done! 😊", data.NumOfCrafts))
+		; Reup Potion if needed
+		if (memento.PotionEnabled && DateDiff(A_Now, potRefresh, "Seconds") >= 0) {
+			log("Refreshing potion buff")
+			ControlSend(memento.PotionButton, , FFXIV)
+			Sleep 1000
+			potRefresh := DateAdd(A_Now, 15 * 60, "Seconds")
+		}
+
+		log(Format("Starting craft #{1}/{2} | F:{3}s P:{4}s",
+			craftsCompleted + 1,
+			numOfCraftsEdit.Value,
+			DateDiff(foodRefresh, A_Now, "Seconds"),
+			DateDiff(potRefresh, A_Now, "Seconds"),
+		))
+		MouseGetPos &userXPos, &userYPos ; Get the user's current mouse pos to restore to later
+		ffxivClickSynthesize(memento.Macro1Button, ffxivXPos, ffxivYPos, userXPos, userYPos)
+
+		if (memento.Macro2Enabled) {
+			ControlSend(memento.Macro2Button, , FFXIV)
+		}
+
+		progressBar.Value := craftsCompleted++/numOfCraftsEdit.Value * 100
 	}
 
 	; Default behavior is to choose the first option in the list
-	updatePreferencesDropDown(resetOption := true, selectProfile := "") {
+	updatePreferencesDropDown(resetOption, selectProfile := "") {
 		profiles := IniRead(PREFERENCES_FILENAME,,, 0)
 		if (!profiles) {
 			; Create the file and save the default settings as a profile
@@ -192,6 +235,7 @@ MARGIN_LEFT := " x30 "
 
 	loadPreferences(*) {
 		log(Format("Loading {1} Profile", profilesList.Text))
+		profileNameEdit.Value 		:= profilesList.Text
 		macro1ButtonEdit.Value		:= IniRead(PREFERENCES_FILENAME, profilesList.Text, "MACRO_1_BIND")
 		macro1DurationEdit.Value 	:= IniRead(PREFERENCES_FILENAME, profilesList.Text, "MACRO_1_DURATION")
 		macro2ButtonEdit.Value 		:= IniRead(PREFERENCES_FILENAME, profilesList.Text, "MACRO_2_BIND")
@@ -211,7 +255,46 @@ MARGIN_LEFT := " x30 "
 	deleteProfile(*) {
 		log(Format("Deleting {1} Profile", profilesList.Text))
 		IniDelete(PREFERENCES_FILENAME, profilesList.Text)
-		updatePreferencesDropDown()
+		updatePreferencesDropDown(true)
+	}
+
+	updateCompletionTime() {
+		SetTimer(, 1000)
+
+		if (macroDuration < 1) {
+			SetTimer(, 0)
+		}
+
+		if (macroDuration > 60) {
+			completionTimeText.Text := Format(
+				"Completion Time: {1} ({2} Minutes)",
+				FormatTime(completionTime, "hh:mm:ss tt"),
+				Round(macroDuration--/60, 2)
+			)
+		} else {
+			completionTimeText.Text := Format(
+				"Completion Time: {1} ({2} Seconds)",
+				FormatTime(completionTime, "hh:mm:ss tt"),
+				Round(macroDuration--, 2)
+			)
+		}
+	}
+
+	closeFfxiv(killGame) {
+		if !killGame {
+			return
+		}
+
+		BlockInput "MouseMove"
+		WinActivate "FINAL FANTASY XIV"
+		WinGetPos ,,&W,&H, "A"
+		WinClose "FINAL FANTASY XIV"
+		MouseMove W/2 - 50, H/2 - 10 ; Move the cursor to confirm exit
+		Click "Down"
+		Sleep 25
+		Click "Up"
+		Sleep 1000
+		BlockInput "MouseMoveOff"
 	}
 
 	log(text, addToLastLine := false) {
@@ -220,39 +303,21 @@ MARGIN_LEFT := " x30 "
 		} else {
 			infoLog.Value := infoLog.Value . '`n' . Format("[{1}] {2}", FormatTime(A_Now, "hh:mm:ss tt"), text)
 		}
+
+		; Scroll to the bottom without interrupting the user
+		SendMessage(0x0115, 7, 0, infoLog, PROGRAM_TITLE) ; 0x115 is WM_VSCROLL - 7 is SB_BOTTOM
+	}
+
+	; Spaces the press and release because "Click" seems to be too fast.
+	ffxivClickSynthesize(macroKey, ffxivXPos, ffxivYPos, userXPos, userYPos) {
+		BlockInput "MouseMove"
+		WinActivate "FINAL FANTASY XIV"
+		Click ffxivXPos, ffxivYPos, "Down"
+		Sleep 25
+		Click "Up"
+		Sleep 1000 ; Wait for craft window to appear
+		ControlSend(macroKey, , FFXIV)
+		BlockInput "MouseMoveOff"
 	}
 }
 
-
-; Spaces the press and release because "Click" seems to be too fast.
-ffxivClickSynthesize(macroKey, ffxivXPos, ffxivYPos, userXPos, userYPos) {
-
-	; Take control from user
-	BlockInput "On"
-	BlockInput "SendAndMouse"
-	BlockInput "MouseMove"
-
-	; Click Synthesize
-	WinActivate "FINAL FANTASY XIV"
-	Sleep 50
-	MouseMove ffxivXPos, ffxivYPos
-	Click "Down"
-	Sleep 25
-	Click "Up"
-	Sleep 25
-
-	; Too many issues if we restore control in the middle
-
-	Sleep 1000 ; Wait for craft window to appear
-	WinActivate "FINAL FANTASY XIV"
-	Sleep 50
-	Send macroKey
-	Sleep 25
-
-	; Restore control
-	MouseMove userXPos, userYPos
-
-	BlockInput "MouseMoveOff"
-	BlockInput "Default"
-	BlockInput "Off"
-}
