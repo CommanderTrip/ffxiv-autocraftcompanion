@@ -3,7 +3,8 @@
 
 FFXIV := "FINAL FANTASY XIV"
 PROGRAM_TITLE := "Auto Craft Companion"
-PREFERENCES_FILENAME 	:= "ffxiv_auto_craft_companion_profiles.ini"
+PREFERENCES_FILEPATH 	:= "./bin/ffxiv_auto_craft_companion_profiles.ini"
+ASSETS_PATH := "./bin/assets/"
 HEADING_TEXT_STYLE		:= "cCCCCCC s16 q0 w700"
 SUBHEADING_TEXT_STYLE	:= "c828282 s12 q0 w400"
 BODY_TEXT_STYLE 		:= " cCCCCCC s12 q0 w400 "
@@ -12,6 +13,14 @@ SMALL_EDIT_STYLE 		:= " cCCCCCC Background262626 Center Border w30 "
 
 MARGIN_TOP  := " y20 "
 MARGIN_LEFT := " x30 "
+
+FFXIV_ACTION_DELAY := 1200 ; in milliseconds
+FFXIV_CONSUMABLE_DELAY := 1500 ; in milliseconds
+
+; TODO: Allow these to be set in the GUI
+FFXIV_CONFIRM_KEYBIND := "{Numpad0}"
+FFXIV_CRAFT_MENU_KEYBIND := "{N}"
+FFXIV_CLOSE_UI_KEYBIND := "{Escape}"
 
 ; Right Ctrl + K.
 >^k::
@@ -28,13 +37,13 @@ MARGIN_LEFT := " x30 "
 	WinSetTransColor((inputGui.BackColor := "010101") ' 255', inputGui)
 
 	; Adding the image here because doing it the other way makes all the other units have transparent backgrounds
-	inputGui.Add("Picture","w700 h550", "bg.png")
+	inputGui.Add("Picture","w700 h550", ASSETS_PATH . "bg.png")
 
 	; HEADER
 	inputGui.SetFont(HEADING_TEXT_STYLE, "Meiryo")
 	inputGui.AddText("Section BackgroundTrans" . MARGIN_LEFT . MARGIN_TOP, PROGRAM_TITLE)
-	inputGui.Add("Picture","BackgroundTrans ys x660", "quit.png").OnEvent("Click", (*) => ExitApp())
-	inputGui.Add("Picture","BackgroundTrans w650 xs", "bar.png")
+	inputGui.Add("Picture","BackgroundTrans ys x660", ASSETS_PATH . "quit.png").OnEvent("Click", (*) => ExitApp())
+	inputGui.Add("Picture","BackgroundTrans w650 xs",  ASSETS_PATH . "bar.png")
 
 	; PROFILES
 	inputGui.SetFont(SUBHEADING_TEXT_STYLE, "Meiryo")
@@ -42,12 +51,12 @@ MARGIN_LEFT := " x30 "
 	profilesList := inputGui.Add("DropDownList", "vProfile Background262626 ys h100 w270", [])
 	profilesList.OnEvent("Change", loadPreferences)
 	inputGui.Add("Button", "ys", "Delete Profile").OnEvent("Click", deleteProfile)
-	inputGui.Add("Picture", "BackgroundTrans w650 xs", "bar.png")
+	inputGui.Add("Picture", "BackgroundTrans w650 xs", ASSETS_PATH . "bar.png")
 
 	; MACROS
 	inputGui.SetFont(SUBHEADING_TEXT_STYLE, "Meiryo")
 	inputGui.Add("Text", "BackgroundTrans Section", "Macro Key and Duration in Seconds")
-	inputGui.Add("Picture", "BackgroundTrans w315 xs", "bar.png")
+	inputGui.Add("Picture", "BackgroundTrans w315 xs", ASSETS_PATH . "bar.png")
 
 	inputGui.SetFont(BODY_TEXT_STYLE, "Meiryo")
 	inputGui.Add("Text", "BackgroundTrans xp", "Profile Name:")
@@ -67,7 +76,7 @@ MARGIN_LEFT := " x30 "
 	; CONSUMABLES
 	inputGui.SetFont(SUBHEADING_TEXT_STYLE, "Meiryo")
 	inputGui.Add("Text", "BackgroundTrans ys Section", "Consumables and Time Remaining")
-	inputGui.Add("Picture", "BackgroundTrans xp w315", "bar.png")
+	inputGui.Add("Picture", "BackgroundTrans xp w315", ASSETS_PATH . "bar.png")
 
 	inputGui.SetFont(BODY_TEXT_STYLE, "Meiryo")
 
@@ -89,9 +98,12 @@ MARGIN_LEFT := " x30 "
 		"Squadron Rationing Manual (45 min)"
 		]
 	)
+	; Food Duration in Minutes = 5 * (buff type from 1 to 4) + 25
 
 	progressBar := inputGui.Add("Progress", "xp x30 y315 w650 Background262626 cA3CC43 Border Smooth", 0)
-	completionTimeText := inputGui.Add("Text", "xp w500 Background262626", "Completion Time: 0")
+	completionTimeText := inputGui.Add("Text", "xp w375 Background262626", "Completion Time: 0")
+	foodTimeText := inputGui.Add("Text", "yp w200 Background262626",   "Food   Refresh Time: 0")
+	potionTimeText := inputGui.Add("Text", "xp w200 Background262626", "Potion Refresh Time: 0")
 
 	; Bottom Section
 	killOnComplete := inputGui.Add("CheckBox", "vKillOnComplete xp x30 y385 Background262626", "Close FFXIV when Complete?")
@@ -103,51 +115,42 @@ MARGIN_LEFT := " x30 "
 
 	updatePreferencesDropDown(true) ; Load the whole gui before we try setting anything
 
-	quitCraft := false
-	crafting := false
 	completionTime := ""
 	macroDuration := ""
 	craftsCompleted := 0
 	singleCraftDuration := 0
 	memento := ""
-	foodRefresh := ""
-	potRefresh := ""
+	foodRefreshDate := ""
+	potRefreshDate := ""
 
-	inputGui.Show()
+	SetKeyDelay 50
 	OnMessage(0x0201, (*) => PostMessage(0x00A1, 2, 0, inputGui)) ;Move the Gui while the left mouse button is down
+	inputGui.Show()
 
 	; Callback function when the Main Gui is finished
 	ffxivPenumbraAutoCraft(*) {
-		; if (!crafting) {
-		; 	startButton.Text := "Cancel Craft"
-		; } else {
-		; 	log("Canceling Craft")
-		; 	startButton.Text := "Start Autocraft"
-		; 	startButton.Opt("+Disabled")
-		; 	return
-		; }
 
 		memento := inputGui.Submit(false) ; Do not hide the window when start is hit
 		log(Format("Starting Craft Profile: {1}", memento.ProfileName))
 
 		craftsCompleted := 0
-		craftWindowPaddingSeconds := 2
-		singleCraftDuration := memento.Macro1Duration + memento.Macro2Duration * memento.Macro2Enabled + craftWindowPaddingSeconds
+		singleCraftDuration := memento.Macro1Duration + memento.Macro2Duration * memento.Macro2Enabled
 		macroDuration := singleCraftDuration * memento.NumOfCrafts
-		completionTime := DateAdd(A_Now, macroDuration, "Seconds")
-		foodRefresh := DateAdd(A_Now, memento.PotionDuration * 60, "Seconds")
-		potRefresh := DateAdd(A_Now, memento.FoodDuration * 60, "Seconds")
 
+		; Don't do date math if we don't need to
+		foodRefreshDate := memento.FoodEnabled ? DateAdd(A_Now, memento.FoodDuration * 60, "Seconds") : 0
+		potRefreshDate := memento.PotionEnabled ? DateAdd(A_Now, memento.PotionDuration * 60, "Seconds") : 0
+
+		; TODO: This time is not precise
+		completionTime := DateAdd(A_Now, macroDuration, "Seconds")
 
 		; Start Timers
-		SetTimer(updateCompletionTime, 1)
+		SetTimer(updateTimers, 1)
 		SetTimer(craftingLoop, 1)
-
 	}
 
 	craftingLoop() {
-		SetTimer(, singleCraftDuration * 1000)
-
+		; Finished the crafts
 		if (craftsCompleted = numOfCraftsEdit.Value) {
 			SetTimer(, 0)
 			progressBar.Value := 100
@@ -156,44 +159,73 @@ MARGIN_LEFT := " x30 "
 			return
 		}
 
-		; Reup Food if needed
-		if (memento.FoodEnabled && DateDiff(A_Now, foodRefresh, "Seconds") >= 0) {
+		; Set the timer sleep based on the actions we will need to perform
+		; TODO: Should there be a buffer for the refresh?
+		; the current time is 1 second before the refresh time
+		needFoodRefresh := memento.FoodEnabled ? DateDiff(A_Now, foodRefreshDate, "Seconds") >= -1 : 0
+		needPotionRefresh := memento.PotionEnabled ? DateDiff(A_Now, potRefreshDate, "Seconds") >= -1 : 0
+
+		SetTimer(, (singleCraftDuration + FFXIV_ACTION_DELAY/1000 * 2 + FFXIV_CONSUMABLE_DELAY/1000 * (needPotionRefresh*2 + needFoodRefresh*2)) * 1000)
+
+		; Refresh Food
+		if (memento.FoodEnabled && needFoodRefresh) {
 			log("Refreshing food buff")
+			ControlSend(FFXIV_CLOSE_UI_KEYBIND, , FFXIV)
+			Sleep FFXIV_CONSUMABLE_DELAY ; Wait for user to stand up
 			ControlSend(memento.FoodButton, , FFXIV)
-			Sleep 1000
-			foodRefresh := DateAdd(A_Now, (memento.FoodBuff * 5 + 25) * 60, "Seconds")
+			Sleep FFXIV_CONSUMABLE_DELAY ; Wait for consumable animation to apply buff
+			ControlSend(FFXIV_CRAFT_MENU_KEYBIND, , FFXIV)
+			foodRefreshDate := DateAdd(A_Now, (5 * memento.FoodBuff + 25) * 60, "Seconds")
 		}
 
-		; Reup Potion if needed
-		if (memento.PotionEnabled && DateDiff(A_Now, potRefresh, "Seconds") >= 0) {
+		; Refresh Potion
+		if (memento.PotionEnabled && needPotionRefresh) {
 			log("Refreshing potion buff")
+			Sleep 50 ; Not sure why this is needed :(
+			ControlSend(FFXIV_CLOSE_UI_KEYBIND, , FFXIV)
+			Sleep FFXIV_CONSUMABLE_DELAY ; Wait for user to stand up
 			ControlSend(memento.PotionButton, , FFXIV)
-			Sleep 1000
-			potRefresh := DateAdd(A_Now, 15 * 60, "Seconds")
+			Sleep FFXIV_CONSUMABLE_DELAY ; Wait for consumable animation to apply buff
+			ControlSend(FFXIV_CRAFT_MENU_KEYBIND, , FFXIV)
+			potRefreshDate := DateAdd(A_Now, 15 * 60, "Seconds")
 		}
 
-		log(Format("Starting craft #{1}/{2} | F:{3}s P:{4}s",
+		log(Format("Starting craft #{1}/{2}",
 			craftsCompleted + 1,
-			numOfCraftsEdit.Value,
-			DateDiff(foodRefresh, A_Now, "Seconds"),
-			DateDiff(potRefresh, A_Now, "Seconds"),
+			numOfCraftsEdit.Value
 		))
-		MouseGetPos &userXPos, &userYPos ; Get the user's current mouse pos to restore to later
-		ffxivClickSynthesize(memento.Macro1Button, ffxivXPos, ffxivYPos, userXPos, userYPos)
 
-		if (memento.Macro2Enabled) {
-			ControlSend(memento.Macro2Button, , FFXIV)
-		}
+		ffxivClickSynthesizeWithoutMouse(memento.Macro1Button, needFoodRefresh || needPotionRefresh)
 
 		progressBar.Value := craftsCompleted++/numOfCraftsEdit.Value * 100
 	}
 
+		; The Craft MUST be in your favorites.
+		ffxivClickSynthesizeWithoutMouse(macroKey, consumableRefreshed) {
+			if (consumableRefreshed) {
+				ControlSend(FFXIV_CONFIRM_KEYBIND, , FFXIV)
+				ControlSend(FFXIV_CONFIRM_KEYBIND, , FFXIV)
+			}
+
+			ControlSend(FFXIV_CONFIRM_KEYBIND, , FFXIV)
+			; ControlSend("{Numpad6}", , FFXIV) ; Trial Synthesis for Testing
+			ControlSend(FFXIV_CONFIRM_KEYBIND, , FFXIV)
+
+			Sleep FFXIV_ACTION_DELAY ; Wait for craft window to appear
+			ControlSend(macroKey, , FFXIV)
+
+			if (memento.Macro2Enabled) {
+				Sleep memento.Macro1Duration * 1000
+				ControlSend(memento.Macro2Button, , FFXIV)
+			}
+		}
+
 	; Default behavior is to choose the first option in the list
 	updatePreferencesDropDown(resetOption, selectProfile := "") {
-		profiles := IniRead(PREFERENCES_FILENAME,,, 0)
+		profiles := IniRead(PREFERENCES_FILEPATH,,, 0)
 		if (!profiles) {
 			; Create the file and save the default settings as a profile
-			file := FileOpen(PREFERENCES_FILENAME, "w")
+			file := FileOpen(PREFERENCES_FILEPATH, "w")
 			file.Close()
 			savePreferences()
 			return
@@ -216,51 +248,52 @@ MARGIN_LEFT := " x30 "
 	savePreferences(*) {
 		data := inputGui.Submit(false)
 		log(Format("Saving {1} Profile", data.ProfileName))
-		IniWrite(data.Macro1Button, 	PREFERENCES_FILENAME, data.ProfileName,	"MACRO_1_BIND")
-		IniWrite(data.Macro1Duration,	PREFERENCES_FILENAME, data.ProfileName,	"MACRO_1_DURATION")
-		IniWrite(data.Macro2Button,		PREFERENCES_FILENAME, data.ProfileName,	"MACRO_2_BIND")
-		IniWrite(data.Macro2Duration, 	PREFERENCES_FILENAME, data.ProfileName,	"MACRO_2_DURATION")
-		IniWrite(data.Macro2Enabled, 	PREFERENCES_FILENAME, data.ProfileName,	"MACRO_2_ENABLED")
-		IniWrite(data.NumOfCrafts, 		PREFERENCES_FILENAME, data.ProfileName, "NUMBER_OF_CRAFTS")
-		IniWrite(data.FoodButton, 		PREFERENCES_FILENAME, data.ProfileName, "FOOD_BIND")
-		IniWrite(data.FoodDuration, 	PREFERENCES_FILENAME, data.ProfileName, "FOOD_TIME_REMAINING")
-		IniWrite(data.FoodEnabled, 		PREFERENCES_FILENAME, data.ProfileName, "FOOD_MACRO_ENABLED")
-		IniWrite(data.FoodBuff, 		PREFERENCES_FILENAME, data.ProfileName, "FOOD_DURATION_BUFFS")
-		IniWrite(data.PotionButton, 	PREFERENCES_FILENAME, data.ProfileName, "POTION_BIND")
-		IniWrite(data.PotionDuration, 	PREFERENCES_FILENAME, data.ProfileName,	"POTION_TIME_REMAINING")
-		IniWrite(data.PotionEnabled, 	PREFERENCES_FILENAME, data.ProfileName, "POTION_MACRO_ENABLED")
-		IniWrite(data.KillOnComplete, 	PREFERENCES_FILENAME, data.ProfileName, "CLOSE_FFXIV_WHEN_DONE")
+		IniWrite(data.Macro1Button, 	PREFERENCES_FILEPATH, data.ProfileName,	"MACRO_1_BIND")
+		IniWrite(data.Macro1Duration,	PREFERENCES_FILEPATH, data.ProfileName,	"MACRO_1_DURATION")
+		IniWrite(data.Macro2Button,		PREFERENCES_FILEPATH, data.ProfileName,	"MACRO_2_BIND")
+		IniWrite(data.Macro2Duration, 	PREFERENCES_FILEPATH, data.ProfileName,	"MACRO_2_DURATION")
+		IniWrite(data.Macro2Enabled, 	PREFERENCES_FILEPATH, data.ProfileName,	"MACRO_2_ENABLED")
+		IniWrite(data.NumOfCrafts, 		PREFERENCES_FILEPATH, data.ProfileName, "NUMBER_OF_CRAFTS")
+		IniWrite(data.FoodButton, 		PREFERENCES_FILEPATH, data.ProfileName, "FOOD_BIND")
+		IniWrite(data.FoodDuration, 	PREFERENCES_FILEPATH, data.ProfileName, "FOOD_TIME_REMAINING")
+		IniWrite(data.FoodEnabled, 		PREFERENCES_FILEPATH, data.ProfileName, "FOOD_MACRO_ENABLED")
+		IniWrite(data.FoodBuff, 		PREFERENCES_FILEPATH, data.ProfileName, "FOOD_DURATION_BUFFS")
+		IniWrite(data.PotionButton, 	PREFERENCES_FILEPATH, data.ProfileName, "POTION_BIND")
+		IniWrite(data.PotionDuration, 	PREFERENCES_FILEPATH, data.ProfileName,	"POTION_TIME_REMAINING")
+		IniWrite(data.PotionEnabled, 	PREFERENCES_FILEPATH, data.ProfileName, "POTION_MACRO_ENABLED")
+		IniWrite(data.KillOnComplete, 	PREFERENCES_FILEPATH, data.ProfileName, "CLOSE_FFXIV_WHEN_DONE")
 		updatePreferencesDropDown(false, data.ProfileName)
 	}
 
 	loadPreferences(*) {
 		log(Format("Loading {1} Profile", profilesList.Text))
 		profileNameEdit.Value 		:= profilesList.Text
-		macro1ButtonEdit.Value		:= IniRead(PREFERENCES_FILENAME, profilesList.Text, "MACRO_1_BIND")
-		macro1DurationEdit.Value 	:= IniRead(PREFERENCES_FILENAME, profilesList.Text, "MACRO_1_DURATION")
-		macro2ButtonEdit.Value 		:= IniRead(PREFERENCES_FILENAME, profilesList.Text, "MACRO_2_BIND")
-		macro2DurationEdit.Value 	:= IniRead(PREFERENCES_FILENAME, profilesList.Text, "MACRO_2_DURATION")
-		macro2EnabledCheckbox.Value := IniRead(PREFERENCES_FILENAME, profilesList.Text, "MACRO_2_ENABLED")
-		numOfCraftsEdit.Value 		:= IniRead(PREFERENCES_FILENAME, profilesList.Text, "NUMBER_OF_CRAFTS")
-		foodButtonEdit.Value 		:= IniRead(PREFERENCES_FILENAME, profilesList.Text, "FOOD_BIND")
-		foodDurationEdit.Value 		:= IniRead(PREFERENCES_FILENAME, profilesList.Text, "FOOD_TIME_REMAINING")
-		foodEnabledCheckbox.Value 	:= IniRead(PREFERENCES_FILENAME, profilesList.Text, "FOOD_MACRO_ENABLED")
-		foodBuffDropDown.Choose(Number(IniRead(PREFERENCES_FILENAME, profilesList.Text, "FOOD_DURATION_BUFFS")))
-		potionButtonEdit.Value 		:= IniRead(PREFERENCES_FILENAME, profilesList.Text, "POTION_BIND")
-		potionDurationEdit.Value 	:= IniRead(PREFERENCES_FILENAME, profilesList.Text, "POTION_TIME_REMAINING")
-		potionEnabledCheckbox.Value := IniRead(PREFERENCES_FILENAME, profilesList.Text, "POTION_MACRO_ENABLED")
-		killOnComplete.Value 		:= IniRead(PREFERENCES_FILENAME, profilesList.Text, "CLOSE_FFXIV_WHEN_DONE")
+		macro1ButtonEdit.Value		:= IniRead(PREFERENCES_FILEPATH, profilesList.Text, "MACRO_1_BIND")
+		macro1DurationEdit.Value 	:= IniRead(PREFERENCES_FILEPATH, profilesList.Text, "MACRO_1_DURATION")
+		macro2ButtonEdit.Value 		:= IniRead(PREFERENCES_FILEPATH, profilesList.Text, "MACRO_2_BIND")
+		macro2DurationEdit.Value 	:= IniRead(PREFERENCES_FILEPATH, profilesList.Text, "MACRO_2_DURATION")
+		macro2EnabledCheckbox.Value := IniRead(PREFERENCES_FILEPATH, profilesList.Text, "MACRO_2_ENABLED")
+		numOfCraftsEdit.Value 		:= IniRead(PREFERENCES_FILEPATH, profilesList.Text, "NUMBER_OF_CRAFTS")
+		foodButtonEdit.Value 		:= IniRead(PREFERENCES_FILEPATH, profilesList.Text, "FOOD_BIND")
+		foodDurationEdit.Value 		:= IniRead(PREFERENCES_FILEPATH, profilesList.Text, "FOOD_TIME_REMAINING")
+		foodEnabledCheckbox.Value 	:= IniRead(PREFERENCES_FILEPATH, profilesList.Text, "FOOD_MACRO_ENABLED")
+		foodBuffDropDown.Choose(Number(IniRead(PREFERENCES_FILEPATH, profilesList.Text, "FOOD_DURATION_BUFFS")))
+		potionButtonEdit.Value 		:= IniRead(PREFERENCES_FILEPATH, profilesList.Text, "POTION_BIND")
+		potionDurationEdit.Value 	:= IniRead(PREFERENCES_FILEPATH, profilesList.Text, "POTION_TIME_REMAINING")
+		potionEnabledCheckbox.Value := IniRead(PREFERENCES_FILEPATH, profilesList.Text, "POTION_MACRO_ENABLED")
+		killOnComplete.Value 		:= IniRead(PREFERENCES_FILEPATH, profilesList.Text, "CLOSE_FFXIV_WHEN_DONE")
 	}
 
 	deleteProfile(*) {
 		log(Format("Deleting {1} Profile", profilesList.Text))
-		IniDelete(PREFERENCES_FILENAME, profilesList.Text)
+		IniDelete(PREFERENCES_FILEPATH, profilesList.Text)
 		updatePreferencesDropDown(true)
 	}
 
-	updateCompletionTime() {
+	updateTimers() {
 		SetTimer(, 1000)
 
+		; Completion Time
 		if (macroDuration < 1) {
 			SetTimer(, 0)
 		}
@@ -277,6 +310,18 @@ MARGIN_LEFT := " x30 "
 				FormatTime(completionTime, "hh:mm:ss tt"),
 				Round(macroDuration--, 2)
 			)
+		}
+
+		; Consumable Timers
+		if (memento.FoodEnabled) {
+			foodTimer := DateDiff(foodRefreshDate, A_Now, "Seconds")
+			foodTimeText.Text := Format("Food   Refresh Time: {1}s", foodTimer > 0 ? foodTimer: "0")
+
+		}
+
+		if (memento.PotionEnabled) {
+			potTimer := DateDiff(potRefreshDate, A_Now, "Seconds")
+			potionTimeText.Text := Format("Potion Refresh Time: {1}s", potTimer > 0 ? potTimer : "0")
 		}
 	}
 
@@ -306,18 +351,6 @@ MARGIN_LEFT := " x30 "
 
 		; Scroll to the bottom without interrupting the user
 		SendMessage(0x0115, 7, 0, infoLog, PROGRAM_TITLE) ; 0x115 is WM_VSCROLL - 7 is SB_BOTTOM
-	}
-
-	; Spaces the press and release because "Click" seems to be too fast.
-	ffxivClickSynthesize(macroKey, ffxivXPos, ffxivYPos, userXPos, userYPos) {
-		BlockInput "MouseMove"
-		WinActivate "FINAL FANTASY XIV"
-		Click ffxivXPos, ffxivYPos, "Down"
-		Sleep 25
-		Click "Up"
-		Sleep 1000 ; Wait for craft window to appear
-		ControlSend(macroKey, , FFXIV)
-		BlockInput "MouseMoveOff"
 	}
 }
 
