@@ -1,8 +1,9 @@
 ﻿#Requires AutoHotkey v2.0
 ; #HotIf WinActive("FINAL FANTASY XIV")
 
-FFXIV := "FINAL FANTASY XIV"
+FFXIV_PROGRAM_NAME := "FINAL FANTASY XIV"
 PROGRAM_TITLE := "Auto Craft Companion"
+WINDOW_SIZE := "w700 h600"
 PREFERENCES_FILEPATH 	:= "./bin/ffxiv_auto_craft_companion_profiles.ini"
 ASSETS_PATH := "./bin/assets/"
 HEADING_TEXT_STYLE		:= "cCCCCCC s16 q0 w700"
@@ -14,8 +15,10 @@ SMALL_EDIT_STYLE 		:= " cCCCCCC Background262626 Center Border w30 "
 MARGIN_TOP  := " y20 "
 MARGIN_LEFT := " x30 "
 
-FFXIV_ACTION_DELAY := 1200 ; in milliseconds
-FFXIV_CONSUMABLE_DELAY := 1500 ; in milliseconds
+; Delays in milliseconds
+FFXIV_ACTION_DELAY := 1500
+FFXIV_CONSUMABLE_DELAY := 1500
+FFXIV_INPUT_DELAY := 100
 
 ; TODO: Allow these to be set in the GUI
 FFXIV_CONFIRM_KEYBIND := "{Numpad0}"
@@ -37,7 +40,7 @@ FFXIV_CLOSE_UI_KEYBIND := "{Escape}"
 	WinSetTransColor((inputGui.BackColor := "010101") ' 255', inputGui)
 
 	; Adding the image here because doing it the other way makes all the other units have transparent backgrounds
-	inputGui.Add("Picture","w700 h550", ASSETS_PATH . "bg.png")
+	inputGui.Add("Picture", WINDOW_SIZE, ASSETS_PATH . "bg.png")
 
 	; HEADER
 	inputGui.SetFont(HEADING_TEXT_STYLE, "Meiryo")
@@ -109,72 +112,101 @@ FFXIV_CLOSE_UI_KEYBIND := "{Escape}"
 	killOnComplete := inputGui.Add("CheckBox", "vKillOnComplete xp x30 y385 Background262626", "Close FFXIV when Complete?")
 
 	startButton := inputGui.Add("Button", "Section Default w100 h64 xp", "Start Autocraft")
-	startButton.OnEvent("Click", ffxivPenumbraAutoCraft)
+	startButton.OnEvent("Click", ffxivAutocraft)
 	inputGui.Add("Button", "w100 h57 xp", "Save`nProfile").OnEvent("Click", savePreferences)
 	infoLog  := inputGui.Add("Edit", "ys ReadOnly Background262626 r6 w550", "Welcome to the Auto Craft Companion!")
 
 	updatePreferencesDropDown(true) ; Load the whole gui before we try setting anything
 
 	completionTime := ""
-	macroDuration := ""
+	macroDurationSeconds := ""
 	craftsCompleted := 0
 	singleCraftDuration := 0
 	memento := ""
 	foodRefreshDate := ""
 	potRefreshDate := ""
+	isCrafting := false
 
-	SetKeyDelay 50
+	WinGetPos &X, &Y, &W, &H, FFXIV_PROGRAM_NAME
+	ffxivWindowPos := {
+		X: X,
+		Y: Y,
+		W: W,
+		H: H
+	}
+
+	SetKeyDelay FFXIV_INPUT_DELAY
 	OnMessage(0x0201, (*) => PostMessage(0x00A1, 2, 0, inputGui)) ;Move the Gui while the left mouse button is down
 	inputGui.Show()
 
 	; Callback function when the Main Gui is finished
-	ffxivPenumbraAutoCraft(*) {
+	ffxivAutocraft(*) {
+		; Change behavior depending on the state of the system
+		if (!isCrafting) { ; Start Crafting
+			startButton.Text := "Cancel`nCraft"
+			isCrafting := true
+		} else { ; Cancel craft
+			log(Format("Cancelling Craft Profile: {1}", memento.ProfileName))
+			log("Please reset to the starting position before next autocraft!")
+			SetTimer(updateTimers, 0)
+			SetTimer(craftingLoop, 0)
+			startButton.Text := "Start Autocraft"
+			isCrafting := false
+			return
+		}
 
 		memento := inputGui.Submit(false) ; Do not hide the window when start is hit
 		log(Format("Starting Craft Profile: {1}", memento.ProfileName))
 
 		craftsCompleted := 0
 		singleCraftDuration := memento.Macro1Duration + memento.Macro2Duration * memento.Macro2Enabled
-		macroDuration := singleCraftDuration * memento.NumOfCrafts
 
 		; Don't do date math if we don't need to
 		foodRefreshDate := memento.FoodEnabled ? DateAdd(A_Now, memento.FoodDuration * 60, "Seconds") : 0
 		potRefreshDate := memento.PotionEnabled ? DateAdd(A_Now, memento.PotionDuration * 60, "Seconds") : 0
 
-		; TODO: This time is not precise
-		completionTime := DateAdd(A_Now, macroDuration, "Seconds")
-
 		; Start Timers
-		SetTimer(updateTimers, 1)
 		SetTimer(craftingLoop, 1)
 	}
 
 	craftingLoop() {
+		progressBar.Value := craftsCompleted/numOfCraftsEdit.Value * 100
+
 		; Finished the crafts
 		if (craftsCompleted = numOfCraftsEdit.Value) {
 			SetTimer(, 0)
 			progressBar.Value := 100
 			log(Format("{1} crafts of {2} complete! 😊", craftsCompleted, profilesList.Text))
+			log("Please reset to the starting position before next autocraft!")
+			startButton.Text := "Start Autocraft"
+			isCrafting := false
 			closeFfxiv(memento.KillOnComplete)
 			return
 		}
 
 		; Set the timer sleep based on the actions we will need to perform
-		; TODO: Should there be a buffer for the refresh?
 		; the current time is 1 second before the refresh time
 		needFoodRefresh := memento.FoodEnabled ? DateDiff(A_Now, foodRefreshDate, "Seconds") >= -1 : 0
 		needPotionRefresh := memento.PotionEnabled ? DateDiff(A_Now, potRefreshDate, "Seconds") >= -1 : 0
 
-		SetTimer(, (singleCraftDuration + FFXIV_ACTION_DELAY/1000 * 2 + FFXIV_CONSUMABLE_DELAY/1000 * (needPotionRefresh*2 + needFoodRefresh*2)) * 1000)
+		timeToNextCraftSeconds := singleCraftDuration + FFXIV_ACTION_DELAY/1000 * 3 + FFXIV_CONSUMABLE_DELAY/1000 * (needPotionRefresh*2 + needFoodRefresh*2)
+
+		if (craftsCompleted = 0) {
+			macroDurationSeconds := timeToNextCraftSeconds * memento.NumOfCrafts
+			completionTime := DateAdd(A_Now, macroDurationSeconds, "Seconds")
+			SetTimer(updateTimers, 1)
+		}
+
+		SetTimer(, timeToNextCraftSeconds * 1000)
 
 		; Refresh Food
 		if (memento.FoodEnabled && needFoodRefresh) {
 			log("Refreshing food buff")
-			ControlSend(FFXIV_CLOSE_UI_KEYBIND, , FFXIV)
+			ControlSend(FFXIV_CLOSE_UI_KEYBIND, , FFXIV_PROGRAM_NAME)
 			Sleep FFXIV_CONSUMABLE_DELAY ; Wait for user to stand up
-			ControlSend(memento.FoodButton, , FFXIV)
+			ControlSend(memento.FoodButton, , FFXIV_PROGRAM_NAME)
 			Sleep FFXIV_CONSUMABLE_DELAY ; Wait for consumable animation to apply buff
-			ControlSend(FFXIV_CRAFT_MENU_KEYBIND, , FFXIV)
+			ControlSend(FFXIV_CRAFT_MENU_KEYBIND, , FFXIV_PROGRAM_NAME)
 			foodRefreshDate := DateAdd(A_Now, (5 * memento.FoodBuff + 25) * 60, "Seconds")
 		}
 
@@ -182,11 +214,11 @@ FFXIV_CLOSE_UI_KEYBIND := "{Escape}"
 		if (memento.PotionEnabled && needPotionRefresh) {
 			log("Refreshing potion buff")
 			Sleep 50 ; Not sure why this is needed :(
-			ControlSend(FFXIV_CLOSE_UI_KEYBIND, , FFXIV)
+			ControlSend(FFXIV_CLOSE_UI_KEYBIND, , FFXIV_PROGRAM_NAME)
 			Sleep FFXIV_CONSUMABLE_DELAY ; Wait for user to stand up
-			ControlSend(memento.PotionButton, , FFXIV)
+			ControlSend(memento.PotionButton, , FFXIV_PROGRAM_NAME)
 			Sleep FFXIV_CONSUMABLE_DELAY ; Wait for consumable animation to apply buff
-			ControlSend(FFXIV_CRAFT_MENU_KEYBIND, , FFXIV)
+			ControlSend(FFXIV_CRAFT_MENU_KEYBIND, , FFXIV_PROGRAM_NAME)
 			potRefreshDate := DateAdd(A_Now, 15 * 60, "Seconds")
 		}
 
@@ -197,28 +229,46 @@ FFXIV_CLOSE_UI_KEYBIND := "{Escape}"
 
 		ffxivClickSynthesizeWithoutMouse(memento.Macro1Button, needFoodRefresh || needPotionRefresh)
 
-		progressBar.Value := craftsCompleted++/numOfCraftsEdit.Value * 100
+		craftsCompleted++
 	}
 
-		; The Craft MUST be in your favorites.
-		ffxivClickSynthesizeWithoutMouse(macroKey, consumableRefreshed) {
-			if (consumableRefreshed) {
-				ControlSend(FFXIV_CONFIRM_KEYBIND, , FFXIV)
-				ControlSend(FFXIV_CONFIRM_KEYBIND, , FFXIV)
-			}
+	; The Craft MUST be in your favorites.
+	ffxivClickSynthesizeWithoutMouse(macroKey, consumableRefreshed) {
+		WinGetPos &X, &Y, &W, &H, FFXIV_PROGRAM_NAME
 
-			ControlSend(FFXIV_CONFIRM_KEYBIND, , FFXIV)
-			; ControlSend("{Numpad6}", , FFXIV) ; Trial Synthesis for Testing
-			ControlSend(FFXIV_CONFIRM_KEYBIND, , FFXIV)
-
-			Sleep FFXIV_ACTION_DELAY ; Wait for craft window to appear
-			ControlSend(macroKey, , FFXIV)
-
-			if (memento.Macro2Enabled) {
-				Sleep memento.Macro1Duration * 1000
-				ControlSend(memento.Macro2Button, , FFXIV)
-			}
+		; The window has changed in some way, this will mess up the in-game cursor so we need to include an extra click
+		; and save the new position
+		if (
+			X != ffxivWindowPos.X ||
+			Y != ffxivWindowPos.Y ||
+			W != ffxivWindowPos.W ||
+			H != ffxivWindowPos.H
+		) {
+			log("Window has moved...resetting cursor.")
+			ControlSend(FFXIV_CONFIRM_KEYBIND, , FFXIV_PROGRAM_NAME)
+			ffxivWindowPos.X := X
+			ffxivWindowPos.Y := Y
+			ffxivWindowPos.W := W
+			ffxivWindowPos.H := H
 		}
+
+		if (consumableRefreshed) {
+			ControlSend(FFXIV_CONFIRM_KEYBIND, , FFXIV_PROGRAM_NAME)
+			ControlSend(FFXIV_CONFIRM_KEYBIND, , FFXIV_PROGRAM_NAME)
+		}
+
+		ControlSend(FFXIV_CONFIRM_KEYBIND, , FFXIV_PROGRAM_NAME)
+		; ControlSend("{Numpad6}", , FFXIV_PROGRAM_NAME) ; Trial Synthesis for Testing
+		ControlSend(FFXIV_CONFIRM_KEYBIND, , FFXIV_PROGRAM_NAME)
+
+		Sleep FFXIV_ACTION_DELAY ; Wait for craft window to appear
+		ControlSend(macroKey, , FFXIV_PROGRAM_NAME)
+
+		if (memento.Macro2Enabled) {
+			Sleep memento.Macro1Duration * 1000
+			ControlSend(memento.Macro2Button, , FFXIV_PROGRAM_NAME)
+		}
+	}
 
 	; Default behavior is to choose the first option in the list
 	updatePreferencesDropDown(resetOption, selectProfile := "") {
@@ -294,21 +344,21 @@ FFXIV_CLOSE_UI_KEYBIND := "{Escape}"
 		SetTimer(, 1000)
 
 		; Completion Time
-		if (macroDuration < 1) {
+		if (macroDurationSeconds < 1) {
 			SetTimer(, 0)
 		}
 
-		if (macroDuration > 60) {
+		if (macroDurationSeconds > 60) {
 			completionTimeText.Text := Format(
 				"Completion Time: {1} ({2} Minutes)",
 				FormatTime(completionTime, "hh:mm:ss tt"),
-				Round(macroDuration--/60, 2)
+				Round(macroDurationSeconds--/60, 2)
 			)
 		} else {
 			completionTimeText.Text := Format(
 				"Completion Time: {1} ({2} Seconds)",
 				FormatTime(completionTime, "hh:mm:ss tt"),
-				Round(macroDuration--, 2)
+				Round(macroDurationSeconds--, 2)
 			)
 		}
 
