@@ -2,6 +2,8 @@
 
 An automated auto crafting macro that will repeat your crafts and reapply food and potion buffs as needed!
 
+Note: This was made as an educational exercise. As stated by Square Enix, 3rd party applications are against their Terms of Service and usage could get you banned.  
+
 ![Preview](https://github.com/CommanderTrip/ffxiv-autocraftcompanion/blob/main/bin/assets/example.png)
 
 ## How to Use it
