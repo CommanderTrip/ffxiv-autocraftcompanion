@@ -169,6 +169,7 @@ ENUM_CONSUMABLE_POTION := "POTION"
 		foodRefreshDate := memento.FoodEnabled ? DateAdd(A_Now, memento.FoodDuration * 60, "Seconds") : 0
 		potRefreshDate := memento.PotionEnabled ? DateAdd(A_Now, memento.PotionDuration * 60, "Seconds") : 0
 
+		; TODO: This is still not accurate
 		; Calculate completion time
 		idealMacroDurationSec := (memento.Macro1Duration + FFXIV_ACTION_DELAY/1000 + memento.Macro2Duration * memento.Macro2Enabled) * memento.NumOfCrafts
 		numOfFoodNeeded := memento.FoodEnabled ? idealMacroDurationSec / foodDurationSec() : 0
@@ -237,7 +238,10 @@ ENUM_CONSUMABLE_POTION := "POTION"
 
 	startSynthesis(macro1Button, macro2Button) {
 		ControlSend(memento.FFXIVConfirm, , FFXIV_PROGRAM_NAME)
+		Sleep FFXIV_ACTION_DELAY / 2
+		ControlSend(memento.FFXIVConfirm, , FFXIV_PROGRAM_NAME) ; huh?
 		; ControlSend("{Numpad6}", , FFXIV_PROGRAM_NAME) ; Trial Synthesis for Testing
+		Sleep FFXIV_ACTION_DELAY / 2
 		ControlSend(memento.FFXIVConfirm, , FFXIV_PROGRAM_NAME)
 
 		Sleep FFXIV_ACTION_DELAY ; Wait for craft window to appear

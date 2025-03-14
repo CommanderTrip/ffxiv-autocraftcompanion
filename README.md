@@ -1,11 +1,30 @@
 # Auto Craft Companion - A fully AFK Crafting Macro for FFXIV
 
-Set FFXIV to windowed mode and move it to another monitor/to the side, hover over "Synthesize", start the macro with AutoHotKey and enjoy some YouTube while you make that Gil!
+An automated auto crafting macro that will repeat your crafts and reapply food and potion buffs as needed!
 
-Use `Ctrl + K` to start the hot key.
+![Preview](./assets/example.png)
 
-## TODO
+## How to Use it
 
-- [ ] Add the option to use 2 keys for a two step macro i.e. not relying on the penumbra plugin "Macrochain"
-- [ ] Add the option to create profiles to auto load different preferences
-- [ ] Add the ability to re-up Food and/or Potion when needed
+This application is intended to be used as a true "AFK" macro so you can step away from FFXIV, play another game, or watch movies while your crafts get completed! This program **will not** determine your crafting rotations; it simply reruns your crafting rotations so you can bulk craft high quality recipes and collectables.
+
+1. Set up your macros (and food/pot if needed) on a hotbar with keybinds.
+2. Use `Ctrl + K` to start the GUI.
+3. Set up your profile on the Auto Craft Companion to the right buttons to click for your macros, food, and potions.
+4. Make sure the recipe you want to bulk craft is in your favorites list.
+5. Stand in the *starting position*: be standing with the right job for the craft, your crafting window open on your favorites list, and click on the recipe you want to craft.
+   - Note: if you need to add HQ materials for your craft, add it in the craft window **then click again on the recipe so it's the last thing you clicked**.
+6. Set FFXIV to windowed mode and move it to another monitor/to the side
+   - Do _NOT_ interact with the Macro window or FFXIV while the macro is going. Interacting with either will affect timings or inputs to start the next craft.
+   - If you do interact with the windows after starting, restarting the craft **will likely fail**, so you'll want to stop/finish the automated craft and restart the setup.
+7. Click "Start Autocraft" and enjoy the free time to do your chores!
+
+## Notes
+
+- Only for Windows since this system was built using [Auto Hotkey](https://www.autohotkey.com/docs/v2/).
+  - There are plans to redo this project in Rust and Tauri.
+- The inputs follow Auto Hotkey's hotkey commands which is why the `System CloseUI Keybind` is `{Esc}`. Check out the docs for more information https://www.autohotkey.com/docs/v2/lib/Send.htm#keynames .
+
+## Known Issues
+
+- Completion Time is not accurate.
