@@ -239,7 +239,7 @@ ENUM_CONSUMABLE_POTION := "POTION"
 	startSynthesis(macro1Button, macro2Button) {
 		ControlSend(memento.FFXIVConfirm, , FFXIV_PROGRAM_NAME)
 		Sleep FFXIV_ACTION_DELAY / 2
-		ControlSend(memento.FFXIVConfirm, , FFXIV_PROGRAM_NAME) ; huh?
+		ControlSend(memento.FFXIVConfirm, , FFXIV_PROGRAM_NAME)
 		; ControlSend("{Numpad6}", , FFXIV_PROGRAM_NAME) ; Trial Synthesis for Testing
 		Sleep FFXIV_ACTION_DELAY / 2
 		ControlSend(memento.FFXIVConfirm, , FFXIV_PROGRAM_NAME)
